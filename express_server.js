@@ -2,6 +2,10 @@ const express = require("express");
 const app = express();
 const PORT = 8080; // default port 8080
 
+const generateRandomSring = function() {
+  return Math.round((Math.pow(36, 6 + 1) - Math.random() * Math.pow(36, length))).toString(36).slice(1);
+}
+
 app.set("view engine", "ejs");
 
 const urlDatabase = {
