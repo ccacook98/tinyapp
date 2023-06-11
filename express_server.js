@@ -2,42 +2,53 @@ const express = require("express");
 const app = express();
 const PORT = 8080; // default port 8080
 
-const generateRandomSring = function() {
-  return Math.round((Math.pow(36, 6 + 1) - Math.random() * Math.pow(36, length))).toString(36).slice(1);
+const generateRandomString = function() {
+  //Generate a random six-character string. There's no good way to do this in JS without resorting to the use of a complex one-liner like this. Sorry...
+  return Math.round((Math.pow(36, 6 + 1) - Math.random() * Math.pow(36, 6))).toString(36).slice(1);
 }
 
+//Enable the EJS view engine
 app.set("view engine", "ejs");
 
-const urlDatabase = {
+//Initial definition for the URL database. This will be added to by the form at /urls/new
+let urlDatabase = {
   "b2xVn2": "http://www.lighthouselabs.ca",
   "9sm5xK": "http://www.google.com"
 };
 
+//Enable extended URL-encoded POST requests
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
   res.send("Hello!");
 });
 
+//Handler for dumping the URL database in machine-readable JSON form
 app.get("/urls.json", (req, res) => {
   res.json(urlDatabase);
 });
 
+//Handler for displaying all registered URLs in human-readable HTML form
 app.get("/urls", (req, res) => {
   const templateVars = { urls: urlDatabase };
   res.render("urls_index", templateVars);
 });
 
-//Dummy code; replace later
+//Handle POST requests to add URLs to the database
 app.post("/urls", (req, res) => {
-  console.log(req.body); // Log the POST request body to the console
+  //generate a new random ID
+  const rndString = generateRandomString();
+  //add a new property to urlDatabase with the random string as key and our URL as value
+  urlDatabase[rndString] = req.body.longURL;
   res.send("Ok"); // Respond with 'Ok' (we will replace this)
 });
 
+//Handler for the /urls/new form which allows new entries to be added.
 app.get("/urls/new", (req, res) => {
   res.render("urls_new");
 });
 
+//Display the URL referenced by the specified key.
 app.get("/urls/:id", (req, res) => {
   const templateVars = { id: req.params.id, longURL: urlDatabase[req.params.id] };
   res.render("urls_show", templateVars);
