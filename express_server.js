@@ -40,7 +40,8 @@ app.post("/urls", (req, res) => {
   const rndString = generateRandomString();
   //add a new property to urlDatabase with the random string as key and our URL as value
   urlDatabase[rndString] = req.body.longURL;
-  res.send("Ok"); // Respond with 'Ok' (we will replace this)
+  //Once done, redirect the user to the page showing the details of their entry.
+  res.redirect('/urls/'+rndString);
 });
 
 //Handler for the /urls/new form which allows new entries to be added.
@@ -48,10 +49,15 @@ app.get("/urls/new", (req, res) => {
   res.render("urls_new");
 });
 
-//Display the URL referenced by the specified key.
+//Display information for the URL referenced by the specified key.
 app.get("/urls/:id", (req, res) => {
   const templateVars = { id: req.params.id, longURL: urlDatabase[req.params.id] };
   res.render("urls_show", templateVars);
+});
+
+//Handle redirects to the long URL
+app.get("/u/:id", (req, res) => {
+  res.redirect(urlDatabase[req.params.id]);
 });
 
 app.get("/hello", (req, res) => {
