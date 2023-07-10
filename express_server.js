@@ -60,6 +60,11 @@ app.get("/u/:id", (req, res) => {
   res.redirect(urlDatabase[req.params.id]);
 });
 
+app.post("/urls/:id/delete", (req, res) => {
+  delete urlDatabase[req.params.id];
+  res.redirect("/urls");
+});
+
 app.get("/hello", (req, res) => {
   const templateVars = { greeting: "Hello World!" };
   res.render("hello_world", templateVars);
