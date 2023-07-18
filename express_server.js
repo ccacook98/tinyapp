@@ -9,6 +9,18 @@ const generateRandomString = function() {
   return Math.round((Math.pow(36, 6 + 1) - Math.random() * Math.pow(36, 6))).toString(36).slice(1);
 };
 
+//Scan over the user database and return the user ID that is registered to the given email address. This also isn't the most efficient way of doing things, but the 'correct' solution is outside the scope of this project.
+const getUserByEmail = function(email, userDatabase) {
+  for(const user in userDatabase) {
+    console.log(userDatabase[user]);
+    if(userDatabase[user]["email"] === email) {
+      return user;
+    }
+  }
+  //This will only execute if the above doesn't already return.
+  return null;
+}
+
 //Enable the EJS view engine
 app.set("view engine", "ejs");
 
@@ -16,6 +28,19 @@ app.set("view engine", "ejs");
 let urlDatabase = {
   "b2xVn2": "http://www.lighthouselabs.ca",
   "9sm5xK": "http://www.google.com"
+};
+
+let users = {
+  userRandomID: {
+    id: "userRandomID",
+    email: "user@example.com",
+    password: "purple-monkey-dinosaur",
+  },
+  user2RandomID: {
+    id: "user2RandomID",
+    email: "user2@example.com",
+    password: "dishwasher-funk",
+  },
 };
 
 //Enable extended URL-encoded POST requests
@@ -32,8 +57,9 @@ app.get("/urls.json", (req, res) => {
 
 //Handler for displaying all registered URLs in human-readable HTML form
 app.get("/urls", (req, res) => {
+  const user = users[req.cookies["user_id"]];
   const templateVars = {
-    username: req.cookies["username"],
+    user: user,
     urls: urlDatabase
     // ... any other vars
   };
@@ -61,8 +87,9 @@ app.get("/urls/new", (req, res) => {
 
 //Display information for the URL referenced by the specified key.
 app.get("/urls/:id", (req, res) => {
+  const user = users[req.cookies["user_id"]];
   const templateVars = {
-    username: req.cookies["username"],
+    user: user,
     id: req.params.id,
     longURL: urlDatabase[req.params.id],
   };
@@ -79,14 +106,50 @@ app.post("/urls/:id", (req, res) => {
   res.redirect("/urls");
 });
 
+app.get("/register", (req, res) => {
+  const templateVars = { user: users[req.cookies["user_id"]] };
+  res.render("urls_registration", templateVars);
+});
+
+app.post("/register", (req, res) => {
+  //Check for a blank username or password; return an error if so
+  if (!req.body.email || !req.body.password) {
+    res.status(400).send("The username and/or password fields must not be blank.");
+    //Check if an existing user already has this email address; return an error if so
+  } else if (getUserByEmail(req.body.email, users)) {
+    res.status(400).send("An account with this email address already exists.");
+  } else {
+    //Otherwise, add the username and password to the user database along with a random user ID
+    const rndID = generateRandomString();
+    users[rndID] = {
+      id: rndID,
+      email: req.body.email,
+      password: req.body.password,
+    }
+    res.cookie("user_id", rndID);
+    res.redirect("/urls");
+  }
+});
+
+app.get("/login", (req, res) => {
+  const templateVars = { user: users[req.cookies["user_id"]] };
+  res.render("urls_login", templateVars);
+});
+
 app.post("/login", (req, res) => {
-  res.cookie("username", req.body.username);
-  res.redirect("/urls");
+  userID = getUserByEmail(req.body.email, users);
+  if(!userID || (req.body.password !== users[userID]["password"])) {
+    console.log(users[userID]);
+    res.status(400).send("The username or password you have entered is incorrect. Please try again.");
+  } else {
+    res.cookie("user_id", userID);
+    res.redirect("/urls");
+  }
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("username");
-  res.redirect("/urls");
+  res.clearCookie("user_id");
+  res.redirect("/login");
 });
 
 app.post("/urls/:id/delete", (req, res) => {
