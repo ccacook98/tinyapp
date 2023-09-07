@@ -1,5 +1,6 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
+const bcrypt = require("bcryptjs");
 const app = express();
 app.use(cookieParser());
 const PORT = 8080; // default port 8080
@@ -12,9 +13,9 @@ const generateRandomString = function() {
 //Scan over the user database and return the user ID that is registered to the given email address. This also isn't the most efficient way of doing things, but the 'correct' solution is outside the scope of this project.
 const getUserByEmail = function(email, userDatabase) {
   for(const user in userDatabase) {
-    console.log(userDatabase[user]);
     if(userDatabase[user]["email"] === email) {
-      return user;
+      //Return the first user object that has a matching email address
+      return userDatabase[user];
     }
   }
   //This will only execute if the above doesn't already return.
@@ -31,9 +32,9 @@ const urlsForUser = function(id) {
       urls[urlID] = urlDatabase[urlID];
     }
   }
-  console.log(urls);
   return urls;
 }
+
 //Enable the EJS view engine
 app.set("view engine", "ejs");
 
@@ -47,12 +48,12 @@ let users = {
   uixlfk: {
     id: "uixlfk",
     email: "user@example.com",
-    password: "purple-monkey-dinosaur",
+    password: "$2a$10$1bTBM4OfWMLnZeApCtUA0.dbJ0N2hVH9rbYAsoaEB87yKVmNnGUjy"
   },
   zgg8m: {
     id: "zgg8m",
     email: "user2@example.com",
-    password: "dishwasher-funk",
+    password: "$2a$10$xDsMLMoxDhp3G8.NuMLRbupsP30TDGSCIXU7h5IYPTEzk2M8BKeW.",
   },
 };
 
@@ -194,7 +195,7 @@ app.post("/register", (req, res) => {
     users[rndID] = {
       id: rndID,
       email: req.body.email,
-      password: req.body.password,
+      password: bcrypt.hashSync(req.body.password, 10),
     }
     res.cookie("user_id", rndID);
     res.redirect("/urls");
@@ -202,26 +203,26 @@ app.post("/register", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-  const userID = req.cookies["user_id"];
+  const user = users[req.cookies["user_id"]];
   //Check if a user is already logged in; if so, redirect to the URLs page
-  if (users[userID]) {
+  if (user) {
     res.redirect("/urls");
   }
   //Otherwise give them the login form
   else {
-    const templateVars = { user: users[req.cookies["user_id"]] };
+    const templateVars = { user: user };
     res.render("urls_login", templateVars);
   }
 });
 
 app.post("/login", (req, res) => {
-  userID = getUserByEmail(req.body.email, users);
-  if(!userID || (req.body.password !== users[userID]["password"])) {
-    console.log(users[userID]);
-    res.status(400).send("The username or password you have entered is incorrect. Please try again.");
-  } else {
-    res.cookie("user_id", userID);
+  user = getUserByEmail(req.body.email, users);
+  if(user && bcrypt.compareSync(req.body.password, user.password)) {
+    console.log(user);
+    res.cookie("user_id", user.id);
     res.redirect("/urls");
+  } else {
+    res.status(400).send("The username or password you have entered is incorrect. Please try again.");
   }
 });
 
