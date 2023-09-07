@@ -78,18 +78,27 @@ app.post("/urls", (req, res) => {
 
 //Handler for the /urls/new form which allows new entries to be added.
 app.get("/urls/new", (req, res) => {
-/*  const templateVars = {
-    username: req.cookies["username"],
+  const user = users[req.cookies["user_id"]];
+  const templateVars = {
+    user: user,
+    urls: urlDatabase
     // ... any other vars
-  };*/
-  res.render("urls_new");
+  };
+  //Check if the user is logged in and verify the user ID against the database
+  if (user.id === req.cookies["user_id"]) {
+    res.render("urls_new", templateVars);
+  }
+  else {
+    //If the user isn't logged in or the given user ID doesn't exist, redirect to the login page
+    res.redirect("/login");
+  }
 });
 
 //Display information for the URL referenced by the specified key.
 app.get("/urls/:id", (req, res) => {
-  const user = users[req.cookies["user_id"]];
+  const userID = users[req.cookies["user_id"]];
   const templateVars = {
-    user: user,
+    user: userID,
     id: req.params.id,
     longURL: urlDatabase[req.params.id],
   };
@@ -98,17 +107,38 @@ app.get("/urls/:id", (req, res) => {
 
 //Handle redirects to the long URL
 app.get("/u/:id", (req, res) => {
-  res.redirect(urlDatabase[req.params.id]);
+  //Test to see if the given short URL exists in the database
+  if (urlDatabase[req.params.id]) {
+    res.redirect(urlDatabase[req.params.id]);
+  }
+  else {
+    //Send a 404 error if there is no such URL
+    res.status(404).send("The short URL you have requested is not in service at this time. Please check the URL and try again.");
+  }
 });
 
 app.post("/urls/:id", (req, res) => {
-  urlDatabase[req.params.id] = req.body.longURL;
-  res.redirect("/urls");
+  const userID = req.cookies["user_id"];
+  //Check if the user is logged in and verify the user ID against the database
+  if (users[userID].id === userID) {
+    urlDatabase[req.params.id] = req.body.longURL;
+    res.redirect("/urls");
+  }
+  else {
+    res.status(403).send("Access denied: You must log in to register a new URL.");
+  }
 });
 
 app.get("/register", (req, res) => {
-  const templateVars = { user: users[req.cookies["user_id"]] };
-  res.render("urls_registration", templateVars);
+  const userID = req.cookies["user_id"];
+  //Check if a user is already logged in; if so, redirect to the URLs page
+  if (users[userID].id === userID) {
+    res.redirect("/urls");
+  }
+  else {
+    const templateVars = { user: users[req.cookies["user_id"]] };
+    res.render("urls_registration", templateVars);
+  }
 });
 
 app.post("/register", (req, res) => {
@@ -132,8 +162,16 @@ app.post("/register", (req, res) => {
 });
 
 app.get("/login", (req, res) => {
-  const templateVars = { user: users[req.cookies["user_id"]] };
-  res.render("urls_login", templateVars);
+  const userID = req.cookies["user_id"];
+  //Check if a user is already logged in; if so, redirect to the URLs page
+  if (users[userID]) {
+    res.redirect("/urls");
+  }
+  //Otherwise give them the login form
+  else {
+    const templateVars = { user: users[req.cookies["user_id"]] };
+    res.render("urls_login", templateVars);
+  }
 });
 
 app.post("/login", (req, res) => {
