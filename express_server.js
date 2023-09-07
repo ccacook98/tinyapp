@@ -1,39 +1,15 @@
 const express = require("express");
-const cookieParser = require("cookie-parser");
+const cookieSession = require("cookie-session");
 const bcrypt = require("bcryptjs");
 const app = express();
-app.use(cookieParser());
+app.use(cookieSession({
+  name: 'session',
+  secret: 'RoO\\Qu9m^ZBgjL.z^op*',
+  // Cookie Options
+  maxAge: 24 * 60 * 60 * 1000 // 24 hours
+}));
 const PORT = 8080; // default port 8080
-
-const generateRandomString = function() {
-  //Generate a random six-character string. There's no good way to do this in JS without resorting to the use of a complex one-liner like this. Sorry...
-  return Math.round((Math.pow(36, 6 + 1) - Math.random() * Math.pow(36, 6))).toString(36).slice(1);
-};
-
-//Scan over the user database and return the user ID that is registered to the given email address. This also isn't the most efficient way of doing things, but the 'correct' solution is outside the scope of this project.
-const getUserByEmail = function(email, userDatabase) {
-  for(const user in userDatabase) {
-    if(userDatabase[user]["email"] === email) {
-      //Return the first user object that has a matching email address
-      return userDatabase[user];
-    }
-  }
-  //This will only execute if the above doesn't already return.
-  return null;
-}
-
-const urlsForUser = function(id) {
-  let urls = [];
-  //Scan the URL database and populate an array with every one that matches the given UID
-  //This creates a copy of the DB containing only the ones the user owns.
-  for(const urlID in urlDatabase) {
-    if (urlDatabase[urlID].userID === id) {
-      //create a corresponding URL object in the new array
-      urls[urlID] = urlDatabase[urlID];
-    }
-  }
-  return urls;
-}
+const utils = require("./helpers");
 
 //Enable the EJS view engine
 app.set("view engine", "ejs");
@@ -44,6 +20,7 @@ let urlDatabase = {
   "9sm5xK": { longURL: "http://www.google.com", userID: "uixlfk" }
 };
 
+//Initial definition for the user database. This is added to every time a user registers at /register
 let users = {
   uixlfk: {
     id: "uixlfk",
@@ -60,8 +37,10 @@ let users = {
 //Enable extended URL-encoded POST requests
 app.use(express.urlencoded({ extended: true }));
 
+//Handle requests for the root directory
 app.get("/", (req, res) => {
-  res.send("Hello!");
+  //Send users who wind up here to the login form
+  res.redirect("/login");
 });
 
 //Handler for dumping the URL database in machine-readable JSON form
@@ -69,16 +48,16 @@ app.get("/urls.json", (req, res) => {
   res.json(urlDatabase);
 });
 
-//Handler for displaying all registered URLs in human-readable HTML form
+//Handler for displaying all registered URLs owned by current user in human-readable HTML form
 app.get("/urls", (req, res) => {
-  const user = users[req.cookies["user_id"]];
+  const user = users[req.session.user_id];
   //Check if user is logged in before proceeding
   if (user) {
-  const templateVars = {
-    user: user,
-    urls: urlsForUser(user.id)
+    const templateVars = {
+      user: user,
+      urls: utils.urlsForUser(user.id, urlDatabase)
     // ... any other vars
-  };
+    };
     res.render("urls_index", templateVars);
   } else {
     //User isn't logged in, so ask them to
@@ -88,17 +67,16 @@ app.get("/urls", (req, res) => {
 
 //Handle POST requests to add URLs to the database
 app.post("/urls", (req, res) => {
-  const user = req.cookies["user_id"];
+  const user = req.session.user_id;
   //Check if the user is logged in
   if (users[user] && users[user].id === user) {
     //generate a new random ID
-    const rndString = generateRandomString();
+    const rndString = utils.generateRandomString();
     //add a new property to urlDatabase with the random string as key and our URL and user ID as values
     urlDatabase[rndString] = { longURL: req.body.longURL, userID: user };
     //Once done, redirect the user to the page showing the details of their entry.
     res.redirect('/urls/' + rndString);
-  }
-  else {
+  } else {
     //Fail with a 403 response code
     res.status(403).send("Access denied: You must log in to register a new URL.");
   }
@@ -106,17 +84,16 @@ app.post("/urls", (req, res) => {
 
 //Handler for the /urls/new form which allows new entries to be added.
 app.get("/urls/new", (req, res) => {
-  const user = users[req.cookies["user_id"]];
+  const user = users[req.session.user_id];
   const templateVars = {
     user: user,
     urls: urlDatabase
     // ... any other vars
   };
   //Check if the user is logged in and verify the user ID against the database
-  if (user && user.id === req.cookies["user_id"]) {
+  if (user && user.id === req.session.user_id) {
     res.render("urls_new", templateVars);
-  }
-  else {
+  } else {
     //If the user isn't logged in or the given user ID doesn't exist, redirect to the login page
     res.redirect("/login");
   }
@@ -124,14 +101,14 @@ app.get("/urls/new", (req, res) => {
 
 //Display information for the URL referenced by the specified key.
 app.get("/urls/:id", (req, res) => {
-  const user = users[req.cookies["user_id"]];
+  const user = users[req.session.user_id];
   //Check if the current user is logged in and owns this URL
   if (user && user.id === urlDatabase[req.params.id].userID) {
-  const templateVars = {
-    user: user,
-    id: req.params.id,
-    longURL: urlDatabase[req.params.id].longURL,
-  };
+    const templateVars = {
+      user: user,
+      id: req.params.id,
+      longURL: urlDatabase[req.params.id].longURL,
+    };
     res.render("urls_show", templateVars);
   } else if (!user) {
     //If the user is not logged in, send a 403
@@ -147,21 +124,21 @@ app.get("/u/:id", (req, res) => {
   //Test to see if the given short URL exists in the database
   if (urlDatabase[req.params.id]) {
     res.redirect(urlDatabase[req.params.id].longURL);
-  }
-  else {
+  } else {
     //Send a 404 error if there is no such URL
     res.status(404).send("The short URL you have requested is not in service at this time. Please check the URL and try again.");
   }
 });
 
+//Handle updating an existing URL. This is used by the form at /urls/:id.
 app.post("/urls/:id", (req, res) => {
-  const user = req.cookies["user_id"];
+  const user = users[req.session.user_id];
   //Check if the user is logged in and verify the user owns this URL
-  if (users[user] && urlDatabase[req.params.id].userID === user) {
+  if (user && urlDatabase[req.params.id].userID === user.id) {
     //Overwrite the target for this URL in the database
     urlDatabase[req.params.id].longURL = req.body.longURL;
     res.redirect("/urls");
-  } else if (users[user]) {
+  } else if (user) {
     //User is logged in but does not own this URL
     res.status(403).send("Access denied: You do not own this URL.");
   } else {
@@ -170,93 +147,89 @@ app.post("/urls/:id", (req, res) => {
   }
 });
 
+//Handle requests for the registation form
 app.get("/register", (req, res) => {
-  const user = req.cookies["user_id"];
+  const user = users[req.session.user_id];
   //Check if a user is already logged in; if so, redirect to the URLs page
-  if (users[user] && users[user].id === user) {
+  if (user) {
     res.redirect("/urls");
-  }
-  else {
-    const templateVars = { user: users[req.cookies["user_id"]] };
+  } else {
+    const templateVars = { user: users[req.session.user_id] };
     res.render("urls_registration", templateVars);
   }
 });
 
+//POST handler for registering new users
 app.post("/register", (req, res) => {
   //Check for a blank username or password; return an error if so
   if (!req.body.email || !req.body.password) {
     res.status(400).send("The username and/or password fields must not be blank.");
     //Check if an existing user already has this email address; return an error if so
-  } else if (getUserByEmail(req.body.email, users)) {
+  } else if (utils.getUserByEmail(req.body.email, users)) {
     res.status(400).send("An account with this email address already exists.");
   } else {
     //Otherwise, add the username and password to the user database along with a random user ID
-    const rndID = generateRandomString();
+    const rndID = utils.generateRandomString();
     users[rndID] = {
       id: rndID,
       email: req.body.email,
       password: bcrypt.hashSync(req.body.password, 10),
-    }
-    res.cookie("user_id", rndID);
+    };
+    req.session.user_id = rndID;
     res.redirect("/urls");
   }
 });
 
+//Handler for generating the login form
 app.get("/login", (req, res) => {
-  const user = users[req.cookies["user_id"]];
+  const user = users[req.session.user_id];
   //Check if a user is already logged in; if so, redirect to the URLs page
   if (user) {
     res.redirect("/urls");
-  }
-  //Otherwise give them the login form
-  else {
+  } else {
+    //Otherwise give them the login form
     const templateVars = { user: user };
     res.render("urls_login", templateVars);
   }
 });
 
+//Handler for POSTs from the login form
 app.post("/login", (req, res) => {
-  user = getUserByEmail(req.body.email, users);
-  if(user && bcrypt.compareSync(req.body.password, user.password)) {
-    console.log(user);
-    res.cookie("user_id", user.id);
+  //Look up the relevant user ID from the database
+  const user = utils.getUserByEmail(req.body.email, users);
+  //Check if the user exists and the provided password matches the hash in the database
+  if (user && bcrypt.compareSync(req.body.password, user.password)) {
+    //Set a session cookie and redirect the user to the URL list
+    req.session.user_id = user.id;
     res.redirect("/urls");
   } else {
+    //Otherwise, send an error message
     res.status(400).send("The username or password you have entered is incorrect. Please try again.");
   }
 });
 
+//Handler for the logout function
 app.post("/logout", (req, res) => {
-  res.clearCookie("user_id");
+  //Remove the session cookie and redirect to the login form
+  req.session = null;
   res.redirect("/login");
 });
 
+//Handler for the delete function
 app.post("/urls/:id/delete", (req, res) => {
-  const user = users[req.cookies["user_id"]];
+  const user = users[req.session.user_id];
   //Check if the user is logged in and verify the user owns this URL
   if (user && urlDatabase[req.params.id].userID === user.id) {
+    //Delete the URL from the database and redirect back to the URL listing
     delete urlDatabase[req.params.id];
     res.redirect("/urls");
   } else if (!user) {
+    //User attempted to delete a URL that wasn't theirs
     res.status(403).send("Access denied: You must log in to delete this URL.");
   } else {
     //We can safely assume the user is logged in but doesn't own the URL
     res.status(403).send("Access denied: You do not own this URL.");
   }
-});
-
-app.get("/hello", (req, res) => {
-  const templateVars = { greeting: "Hello World!" };
-  res.render("hello_world", templateVars);
-});
-
-app.get("/set", (req, res) => {
-  const a = 1;
-  res.send(`a = ${a}`);
-});
-
-app.get("/fetch", (req, res) => {
-  res.send(`a = ${a}`);
 });
 
 //Start listening on the specified port
